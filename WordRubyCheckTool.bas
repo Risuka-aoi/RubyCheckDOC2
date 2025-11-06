@@ -1,18 +1,6 @@
 Attribute VB_Name = "WordRubyCheckTool"
 Option Explicit
 
-Private Type RubyCheckRecord
-    No As Long
-    PageNumber As Long
-    TargetText As String
-    RubyText As String
-    RubyPresence As String
-    RubyFontName As String
-    RubyFontSize As String
-    ObjectType As String
-    Notes As String
-End Type
-
 Public Sub RunWordRubyCheck()
     Dim originalDoc As Document
     Dim tempDoc As Document
@@ -155,6 +143,7 @@ Private Sub InspectPlainText(ByVal textValue As String, ByVal objectLabel As Str
 
     parts = Split(textValue, vbCrLf)
     For i = LBound(parts) To UBound(parts)
+        Set recordItem = New RubyCheckRecord
         recordItem.No = records.Count + 1
         recordItem.PageNumber = 0
         recordItem.TargetText = parts(i)
@@ -171,6 +160,7 @@ End Sub
 Private Sub AppendPlaceholderRecord(ByRef records As Collection, ByVal objectLabel As String, ByVal message As String)
     Dim recordItem As RubyCheckRecord
 
+    Set recordItem = New RubyCheckRecord
     recordItem.No = records.Count + 1
     recordItem.PageNumber = 0
     recordItem.TargetText = message
@@ -224,6 +214,10 @@ Private Sub RecordRuby(ByVal segmentRange As Range, ByVal objectLabel As String,
     Dim expectedRuby As String
     Dim notes As String
     Dim rubyPresence As String
+    Dim rubyText As String
+    Dim rubyFontName As String
+    Dim rubyFontSizeValue As Variant
+    Dim rubyFontSizeText As String
 
     cleanedText = Replace(segmentRange.Text, vbCr, "")
     cleanedText = Replace(cleanedText, vbLf, "")
@@ -232,22 +226,30 @@ Private Sub RecordRuby(ByVal segmentRange As Range, ByVal objectLabel As String,
     If Len(cleanedText) = 0 Then Exit Sub
 
     expectedRuby = ExpectedRubyFor(cleanedText)
+    rubyText = ExtractRubyDetails(segmentRange, rubyFontName, rubyFontSizeValue)
 
-    If segmentRange.RubyText <> "" Then
+    If rubyText <> "" Then
         rubyPresence = "OK"
     Else
         rubyPresence = "NG"
     End If
 
-    notes = BuildNotes(segmentRange, cleanedText, expectedRuby)
+    If IsNumeric(rubyFontSizeValue) Then
+        rubyFontSizeText = Format$(CDbl(rubyFontSizeValue), "0.##") & "pt"
+    Else
+        rubyFontSizeText = ""
+    End If
 
+    notes = BuildNotes(expectedRuby, rubyText, rubyFontName, rubyFontSizeValue)
+
+    Set recordItem = New RubyCheckRecord
     recordItem.No = records.Count + 1
     recordItem.PageNumber = segmentRange.Information(wdActiveEndAdjustedPageNumber)
     recordItem.TargetText = cleanedText
-    recordItem.RubyText = segmentRange.RubyText
+    recordItem.RubyText = rubyText
     recordItem.RubyPresence = rubyPresence
-    recordItem.RubyFontName = segmentRange.RubyFont.Name
-    recordItem.RubyFontSize = Format$(segmentRange.RubyFont.Size, "0.##pt")
+    recordItem.RubyFontName = rubyFontName
+    recordItem.RubyFontSize = rubyFontSizeText
     recordItem.ObjectType = objectLabel
     recordItem.Notes = notes
 
@@ -273,27 +275,34 @@ Private Function ExpectedRubyFor(ByVal targetText As String) As String
     End Select
 End Function
 
-Private Function BuildNotes(ByVal segmentRange As Range, ByVal targetText As String, ByVal expectedRuby As String) As String
+Private Function BuildNotes(ByVal expectedRuby As String, ByVal rubyText As String, ByVal rubyFontName As String, ByVal rubyFontSizeValue As Variant) As String
     Dim noteItems As Collection
-    Dim currentNote As String
+    Dim currentNote As Variant
+    Dim result As String
+    Dim hasRubyFontSize As Boolean
 
     Set noteItems = New Collection
 
     If expectedRuby <> "" Then
-        If segmentRange.RubyText = "" Then
+        If rubyText = "" Then
             noteItems.Add "ルビなし"
-        ElseIf segmentRange.RubyText <> expectedRuby Then
+        ElseIf rubyText <> expectedRuby Then
             noteItems.Add "期待値: " & expectedRuby
         End If
     Else
         noteItems.Add "対象外"
     End If
 
-    If segmentRange.RubyText <> "" Then
-        If segmentRange.RubyFont.Name = "" Then
+    If rubyText <> "" Then
+        If Len(rubyFontName) = 0 Then
             noteItems.Add "フォント未設定"
         End If
-        If segmentRange.RubyFont.Size = 0 Then
+        If IsNumeric(rubyFontSizeValue) Then
+            hasRubyFontSize = (CDbl(rubyFontSizeValue) <> 0)
+        Else
+            hasRubyFontSize = False
+        End If
+        If Not hasRubyFontSize Then
             noteItems.Add "サイズ未設定"
         End If
     End If
@@ -302,17 +311,60 @@ Private Function BuildNotes(ByVal segmentRange As Range, ByVal targetText As Str
         BuildNotes = "-"
     Else
         For Each currentNote In noteItems
-            If BuildNotes = "" Then
-                BuildNotes = currentNote
+            If result = "" Then
+                result = CStr(currentNote)
             Else
-                BuildNotes = BuildNotes & ", " & currentNote
+                result = result & ", " & CStr(currentNote)
             End If
         Next currentNote
+        BuildNotes = result
     End If
 End Function
 
+Private Function ExtractRubyDetails(ByVal segmentRange As Range, ByRef rubyFontName As String, ByRef rubyFontSizeValue As Variant) As String
+    Dim rubyObject As Object
+    Dim rubyText As String
+
+    rubyFontName = ""
+    rubyFontSizeValue = Null
+
+    On Error Resume Next
+    Set rubyObject = segmentRange.Ruby
+    If Err.Number <> 0 Then
+        Err.Clear
+        Set rubyObject = Nothing
+    End If
+    On Error GoTo 0
+
+    If rubyObject Is Nothing Then
+        ExtractRubyDetails = ""
+        Exit Function
+    End If
+
+    On Error Resume Next
+    rubyText = rubyObject.Text
+    If Err.Number <> 0 Then
+        rubyText = ""
+        Err.Clear
+    End If
+
+    rubyFontName = rubyObject.Font.Name
+    If Err.Number <> 0 Then
+        rubyFontName = ""
+        Err.Clear
+    End If
+
+    rubyFontSizeValue = rubyObject.Font.Size
+    If Err.Number <> 0 Then
+        rubyFontSizeValue = Null
+        Err.Clear
+    End If
+    On Error GoTo 0
+
+    ExtractRubyDetails = rubyText
+End Function
+
 Private Sub OutputResults(ByVal records As Collection, ByVal messageLines As Collection)
-    Dim recordVariant As Variant
     Dim recordItem As RubyCheckRecord
     Dim header As String
     Dim line As String
@@ -323,8 +375,7 @@ Private Sub OutputResults(ByVal records As Collection, ByVal messageLines As Col
     Debug.Print header
     messageLines.Add header
 
-    For Each recordVariant In records
-        recordItem = recordVariant
+    For Each recordItem In records
         line = recordItem.No & vbTab & _
                recordItem.PageNumber & vbTab & _
                recordItem.TargetText & vbTab & _
@@ -336,7 +387,7 @@ Private Sub OutputResults(ByVal records As Collection, ByVal messageLines As Col
                recordItem.Notes
         Debug.Print line
         messageLines.Add line
-    Next recordVariant
+    Next recordItem
 
     MsgBox JoinCollection(messageLines, vbCrLf), vbInformation, "Wordルビ振りチェックツール"
 End Sub
