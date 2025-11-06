@@ -334,7 +334,7 @@ Private Function ExtractRubyDetails(ByVal segmentRange As Range, ByRef rubyFontN
     rubyFontSizeValue = Null
 
     On Error Resume Next
-    Set rubyObject = segmentRange.Ruby
+    Set rubyObject = CallByName(segmentRange, "Ruby", VbGet)
     If Err.Number <> 0 Then
         Err.Clear
         Set rubyObject = Nothing
