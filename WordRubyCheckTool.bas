@@ -232,7 +232,7 @@ Private Sub RecordRuby(ByVal segmentRange As Range, ByVal objectLabel As String,
 
         If Len(characterText) = 0 Then GoTo ContinueNextCharacter
 
-        rubyText = ExtractRubyDetails(characterRange, rubyFontName, rubyFontSizeValue)
+        rubyText = ExtractRubyDetails(characterRange, rubyFontName, rubyFontSizeValue, characterText)
 
         If rubyText <> "" Then
             rubyPresence = "OK"
@@ -268,14 +268,16 @@ Private Function NormalizeCharacterText(ByVal rawText As String) As String
 
     cleaned = Replace(rawText, vbCr, "")
     cleaned = Replace(cleaned, vbLf, "")
+    cleaned = Replace(cleaned, Chr$(0), "")
     cleaned = Replace(cleaned, Chr$(7), "")
 
     NormalizeCharacterText = cleaned
 End Function
 
-Private Function ExtractRubyDetails(ByVal segmentRange As Range, ByRef rubyFontName As String, ByRef rubyFontSizeValue As Variant) As String
+Private Function ExtractRubyDetails(ByVal segmentRange As Range, ByRef rubyFontName As String, ByRef rubyFontSizeValue As Variant, ByRef baseText As String) As String
     Dim rubyObject As Object
     Dim rubyText As String
+    Dim baseRange As Range
 
     rubyFontName = ""
     rubyFontSizeValue = Null
@@ -294,10 +296,20 @@ Private Function ExtractRubyDetails(ByVal segmentRange As Range, ByRef rubyFontN
     End If
 
     On Error Resume Next
-    rubyText = rubyObject.Text
+    rubyText = rubyObject.RubyText
     If Err.Number <> 0 Then
         rubyText = ""
         Err.Clear
+    End If
+
+    If Len(baseText) = 0 Then
+        Set baseRange = rubyObject.Base.Duplicate
+        baseRange.SetRange Start:=segmentRange.Start, End:=segmentRange.End
+        baseText = NormalizeCharacterText(baseRange.Text)
+        If Err.Number <> 0 Then
+            baseText = ""
+            Err.Clear
+        End If
     End If
 
     rubyFontName = rubyObject.Font.Name
