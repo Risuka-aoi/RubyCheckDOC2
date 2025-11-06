@@ -20,6 +20,7 @@ Public Sub RunWordRubyCheck()
         Set tempDoc = originalDoc
     End If
 
+    CollectMainStoryText tempDoc, records
     CollectShapeText tempDoc, records
     CollectActiveXText tempDoc, records
 
@@ -52,6 +53,10 @@ Private Function SaveAsTemporaryDocx(ByVal sourceDoc As Document) As String
         SaveAsTemporaryDocx = ""
     End If
 End Function
+
+Private Sub CollectMainStoryText(ByVal targetDoc As Document, ByRef records As Collection)
+    InspectTextRange targetDoc.Content, "Document", records
+End Sub
 
 Private Sub CollectShapeText(ByVal targetDoc As Document, ByRef records As Collection)
     Dim shp As Shape
