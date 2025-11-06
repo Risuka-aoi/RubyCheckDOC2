@@ -153,11 +153,11 @@ Private Sub InspectPlainText(ByVal textValue As String, ByVal objectLabel As Str
         recordItem.PageNumber = 0
         recordItem.TargetText = parts(i)
         recordItem.RubyText = ""
-        recordItem.RubyPresence = "未取得"
+        recordItem.RubyPresence = "NG"
         recordItem.RubyFontName = ""
         recordItem.RubyFontSize = ""
         recordItem.ObjectType = objectLabel
-        recordItem.Notes = "未取得"
+        recordItem.Notes = ""
         records.Add recordItem
     Next i
 End Sub
@@ -170,7 +170,7 @@ Private Sub AppendPlaceholderRecord(ByRef records As Collection, ByVal objectLab
     recordItem.PageNumber = 0
     recordItem.TargetText = message
     recordItem.RubyText = ""
-    recordItem.RubyPresence = "未取得"
+    recordItem.RubyPresence = "NG"
     recordItem.RubyFontName = ""
     recordItem.RubyFontSize = ""
     recordItem.ObjectType = objectLabel
@@ -214,116 +214,63 @@ ContinueLoop:
 End Sub
 
 Private Sub RecordRuby(ByVal segmentRange As Range, ByVal objectLabel As String, ByRef records As Collection)
-    Dim cleanedText As String
+    Dim characterIndex As Long
+    Dim characterRange As Range
+    Dim characterText As String
     Dim recordItem As RubyCheckRecord
-    Dim expectedRuby As String
-    Dim notes As String
-    Dim rubyPresence As String
-    Dim rubyText As String
     Dim rubyFontName As String
     Dim rubyFontSizeValue As Variant
     Dim rubyFontSizeText As String
+    Dim rubyPresence As String
+    Dim rubyText As String
 
-    cleanedText = Replace(segmentRange.Text, vbCr, "")
-    cleanedText = Replace(cleanedText, vbLf, "")
-    cleanedText = Trim$(cleanedText)
+    If segmentRange.Characters.Count = 0 Then Exit Sub
 
-    If Len(cleanedText) = 0 Then Exit Sub
+    For characterIndex = 1 To segmentRange.Characters.Count
+        Set characterRange = segmentRange.Characters(characterIndex).Duplicate
+        characterText = NormalizeCharacterText(characterRange.Text)
 
-    expectedRuby = ExpectedRubyFor(cleanedText)
-    rubyText = ExtractRubyDetails(segmentRange, rubyFontName, rubyFontSizeValue)
+        If Len(characterText) = 0 Then GoTo ContinueNextCharacter
 
-    If rubyText <> "" Then
-        rubyPresence = "OK"
-    Else
-        rubyPresence = "NG"
-    End If
+        rubyText = ExtractRubyDetails(characterRange, rubyFontName, rubyFontSizeValue)
 
-    If IsNumeric(rubyFontSizeValue) Then
-        rubyFontSizeText = Format$(CDbl(rubyFontSizeValue), "0.##") & "pt"
-    Else
-        rubyFontSizeText = ""
-    End If
+        If rubyText <> "" Then
+            rubyPresence = "OK"
+        Else
+            rubyPresence = "NG"
+        End If
 
-    notes = BuildNotes(expectedRuby, rubyText, rubyFontName, rubyFontSizeValue)
+        If IsNumeric(rubyFontSizeValue) Then
+            rubyFontSizeText = Format$(CDbl(rubyFontSizeValue), "0.##") & "pt"
+        Else
+            rubyFontSizeText = ""
+        End If
 
-    Set recordItem = New RubyCheckRecord
-    recordItem.No = records.Count + 1
-    recordItem.PageNumber = segmentRange.Information(wdActiveEndAdjustedPageNumber)
-    recordItem.TargetText = cleanedText
-    recordItem.RubyText = rubyText
-    recordItem.RubyPresence = rubyPresence
-    recordItem.RubyFontName = rubyFontName
-    recordItem.RubyFontSize = rubyFontSizeText
-    recordItem.ObjectType = objectLabel
-    recordItem.Notes = notes
+        Set recordItem = New RubyCheckRecord
+        recordItem.No = records.Count + 1
+        recordItem.PageNumber = characterRange.Information(wdActiveEndAdjustedPageNumber)
+        recordItem.TargetText = characterText
+        recordItem.RubyText = rubyText
+        recordItem.RubyPresence = rubyPresence
+        recordItem.RubyFontName = rubyFontName
+        recordItem.RubyFontSize = rubyFontSizeText
+        recordItem.ObjectType = objectLabel
+        recordItem.Notes = ""
 
-    records.Add recordItem
+        records.Add recordItem
+
+ContinueNextCharacter:
+    Next characterIndex
 End Sub
 
-Private Function ExpectedRubyFor(ByVal targetText As String) As String
-    Select Case targetText
-        Case "0"
-            ExpectedRubyFor = "ｾﾞﾛ"
-        Case "O"
-            ExpectedRubyFor = "ｵｰ"
-        Case "l"
-            ExpectedRubyFor = "ｴﾙ"
-        Case "I"
-            ExpectedRubyFor = "ｱｲ"
-        Case "|"
-            ExpectedRubyFor = "ﾊﾟｲﾌﾟ"
-        Case "1"
-            ExpectedRubyFor = "ｲﾁ"
-        Case Else
-            ExpectedRubyFor = ""
-    End Select
-End Function
+Private Function NormalizeCharacterText(ByVal rawText As String) As String
+    Dim cleaned As String
 
-Private Function BuildNotes(ByVal expectedRuby As String, ByVal rubyText As String, ByVal rubyFontName As String, ByVal rubyFontSizeValue As Variant) As String
-    Dim noteItems As Collection
-    Dim currentNote As Variant
-    Dim result As String
-    Dim hasRubyFontSize As Boolean
+    cleaned = Replace(rawText, vbCr, "")
+    cleaned = Replace(cleaned, vbLf, "")
+    cleaned = Replace(cleaned, Chr$(7), "")
 
-    Set noteItems = New Collection
-
-    If expectedRuby <> "" Then
-        If rubyText = "" Then
-            noteItems.Add "ルビなし"
-        ElseIf rubyText <> expectedRuby Then
-            noteItems.Add "期待値: " & expectedRuby
-        End If
-    Else
-        noteItems.Add "対象外"
-    End If
-
-    If rubyText <> "" Then
-        If Len(rubyFontName) = 0 Then
-            noteItems.Add "フォント未設定"
-        End If
-        If IsNumeric(rubyFontSizeValue) Then
-            hasRubyFontSize = (CDbl(rubyFontSizeValue) <> 0)
-        Else
-            hasRubyFontSize = False
-        End If
-        If Not hasRubyFontSize Then
-            noteItems.Add "サイズ未設定"
-        End If
-    End If
-
-    If noteItems.Count = 0 Then
-        BuildNotes = "-"
-    Else
-        For Each currentNote In noteItems
-            If result = "" Then
-                result = CStr(currentNote)
-            Else
-                result = result & ", " & CStr(currentNote)
-            End If
-        Next currentNote
-        BuildNotes = result
-    End If
+    NormalizeCharacterText = cleaned
 End Function
 
 Private Function ExtractRubyDetails(ByVal segmentRange As Range, ByRef rubyFontName As String, ByRef rubyFontSizeValue As Variant) As String
@@ -374,7 +321,7 @@ Private Sub OutputResults(ByVal records As Collection, ByVal messageLines As Col
     Dim header As String
     Dim line As String
 
-    header = "No." & vbTab & "Page" & vbTab & "対象文字列" & vbTab & "ルビ" & vbTab & _
+    header = "No." & vbTab & "Page" & vbTab & "対象文字" & vbTab & _
              "ルビ有無" & vbTab & "フォント名" & vbTab & "ルビサイズ" & vbTab & "オブジェクト種別" & vbTab & "備考"
 
     Debug.Print header
@@ -384,7 +331,6 @@ Private Sub OutputResults(ByVal records As Collection, ByVal messageLines As Col
         line = recordItem.No & vbTab & _
                recordItem.PageNumber & vbTab & _
                recordItem.TargetText & vbTab & _
-               recordItem.RubyText & vbTab & _
                recordItem.RubyPresence & vbTab & _
                recordItem.RubyFontName & vbTab & _
                recordItem.RubyFontSize & vbTab & _
